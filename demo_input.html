@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Demo Input - Complex Merged Cells</title>
+</head>
+<body>
+    <table border="1" cellpadding="5" cellspacing="0">
+        <!-- 첫 번째 행: colspan이 있는 헤더 -->
+        <tr>
+            <td colspan="3">부서 정보</td>
+            <td colspan="2">개인 정보</td>
+        </tr>
+        <!-- 두 번째 행: rowspan과 colspan이 혼합 -->
+        <tr>
+            <td rowspan="2">개발팀</td>
+            <td>프론트엔드</td>
+            <td>백엔드</td>
+            <td>이름</td>
+            <td>나이</td>
+        </tr>
+        <!-- 세 번째 행: rowspan이 있는 셀 -->
+        <tr>
+            <td>React</td>
+            <td>Node.js</td>
+            <td rowspan="2">홍길동</td>
+            <td rowspan="2">30</td>
+        </tr>
+        <!-- 네 번째 행: 복잡한 병합 -->
+        <tr>
+            <td rowspan="2" colspan="2">디자인팀</td>
+            <td>UI/UX</td>
+        </tr>
+        <!-- 다섯 번째 행 -->
+        <tr>
+            <td>김철수</td>
+            <td>25</td>
+            <td></td>
+        </tr>
+        <!-- 여섯 번째 행: 큰 병합 셀 -->
+        <tr>
+            <td rowspan="2" colspan="3">마케팅팀</td>
+            <td>박영희</td>
+            <td>28</td>
+        </tr>
+        <!-- 일곱 번째 행 -->
+        <tr>
+            <td>이민수</td>
+            <td>32</td>
+        </tr>
+        <!-- 여덟 번째 행: 복잡한 교차 병합 -->
+        <tr>
+            <td>QA팀</td>
+            <td rowspan="2" colspan="2">품질 보증</td>
+            <td>최지은</td>
+            <td>27</td>
+        </tr>
+        <!-- 아홉 번째 행 -->
+        <tr>
+            <td>테스트</td>
+            <td>정대현</td>
+            <td>29</td>
+        </tr>
+    </table>
+</body>
+</html>
