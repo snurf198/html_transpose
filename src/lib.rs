@@ -14,46 +14,35 @@ struct MergedCell {
 pub fn transpose(html: &str) -> Result<String, String> {
     let document = Html::parse_document(html);
     
-    // 1. validate and find table element
     let table_selector = Selector::parse("table").map_err(|e| format!("Failed to parse table selector: {}", e))?;
     let root = document.select(&table_selector).next()
         .ok_or("No <table> element found")?;
     
-    // table 태그의 모든 attribute 수집
     let mut table_attributes: HashMap<String, String> = HashMap::new();
     for (attr_name, attr_value) in root.value().attrs() {
         table_attributes.insert(attr_name.to_string(), attr_value.to_string());
     }
 
-    // 2. convert html table to nxm grid and unmerge preserving the merged cell info to seperate dictionary for future case
     let tr_selector = Selector::parse("tr").map_err(|e| format!("Failed to parse tr selector: {}", e))?;
     let td_selector = Selector::parse("td, th").map_err(|e| format!("Failed to parse td/th selector: {}", e))?;
 
-    // 2-1. 그리드 크기 계산 및 그리드 채우기
-    // 먼저 모든 행을 순회하여 그리드 크기와 내용을 계산
     let mut grid: Vec<Vec<Option<String>>> = Vec::new();
     let mut merged_cells: HashMap<(usize, usize), MergedCell> = HashMap::new();
-    // 모든 셀의 attribute를 저장 (rowspan, colspan 제외)
     let mut cell_attributes: HashMap<(usize, usize), HashMap<String, String>> = HashMap::new();
-    // 병합된 셀에 의해 점유된 위치를 추적 (실제 빈 셀과 구분하기 위해)
     let mut occupied_positions: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     
-    // 각 행을 순회하면서 그리드 채우기
     for (row_idx, row) in root.select(&tr_selector).enumerate() {
-        // 행이 없으면 추가
         if row_idx >= grid.len() {
             grid.push(Vec::new());
         }
         
         let mut col_idx = 0;
         
-        // 현재 행의 열 위치 찾기 (이전 rowspan으로 점유된 셀 건너뛰기)
         while col_idx < grid[row_idx].len() && grid[row_idx][col_idx].is_some() {
             col_idx += 1;
         }
         
         for cell in row.select(&td_selector) {
-            // 점유된 셀 건너뛰기
             while col_idx < grid[row_idx].len() && grid[row_idx][col_idx].is_some() {
                 col_idx += 1;
             }
@@ -67,17 +56,14 @@ pub fn transpose(html: &str) -> Result<String, String> {
 
             let content = cell.text().collect::<String>().trim().to_string();
             
-            // 모든 attribute 수집 (rowspan, colspan 제외)
             let mut attributes: HashMap<String, String> = HashMap::new();
             for (attr_name, attr_value) in cell.value().attrs() {
                 let name = attr_name.to_string();
-                // rowspan과 colspan은 별도로 관리하므로 제외
                 if name != "rowspan" && name != "colspan" {
                     attributes.insert(name, attr_value.to_string());
                 }
             }
             
-            // 그리드 크기 확장
             let needed_rows = row_idx + rowspan;
             let needed_cols = col_idx + colspan;
             
@@ -91,15 +77,12 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 }
             }
             
-            // 메인 셀에 내용 저장
             grid[row_idx][col_idx] = Some(content.clone());
             
-            // 모든 셀의 attribute 저장
             if !attributes.is_empty() {
                 cell_attributes.insert((row_idx, col_idx), attributes.clone());
             }
             
-            // 병합된 셀인 경우 정보 저장
             if rowspan > 1 || colspan > 1 {
                 merged_cells.insert((row_idx, col_idx), MergedCell {
                     rowspan,
@@ -109,14 +92,11 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 });
             }
             
-            // 병합된 영역을 점유된 것으로 표시 (빈 문자열로)
             for r in 0..rowspan {
                 for c in 0..colspan {
                     if r == 0 && c == 0 {
-                        // 메인 셀은 이미 내용이 있음
                     } else {
                         grid[row_idx + r][col_idx + c] = Some("".to_string());
-                        // 점유된 위치 기록
                         occupied_positions.insert((row_idx + r, col_idx + c));
                     }
                 }
@@ -129,39 +109,30 @@ pub fn transpose(html: &str) -> Result<String, String> {
     let max_row = grid.len();
     let max_col = if max_row > 0 { grid[0].len() } else { 0 };
 
-    // 3. 그리드 전치 및 병합된 셀 정보 전치
     let transposed_rows = max_col;
     let transposed_cols = max_row;
     let mut transposed_grid: Vec<Vec<Option<String>>> = vec![vec![None; transposed_cols]; transposed_rows];
     let mut transposed_merged_cells: HashMap<(usize, usize), MergedCell> = HashMap::new();
     let mut transposed_cell_attributes: HashMap<(usize, usize), HashMap<String, String>> = HashMap::new();
-    // 점유된 위치도 전치
     let mut transposed_occupied_positions: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
 
-    // 그리드 전치
     for r in 0..max_row {
         for c in 0..max_col {
             transposed_grid[c][r] = grid[r][c].clone();
         }
     }
 
-    // 점유된 위치 전치
     for (row, col) in occupied_positions.iter() {
         transposed_occupied_positions.insert((*col, *row));
     }
 
-    // 일반 셀의 attribute 전치
     for ((row, col), attrs) in cell_attributes.iter() {
-        // 병합된 셀이 아닌 경우만 (병합된 셀은 merged_cells에 있음)
         if !merged_cells.contains_key(&(*row, *col)) {
             transposed_cell_attributes.insert((*col, *row), attrs.clone());
         }
     }
 
-    // 병합된 셀 정보 전치
     for ((row, col), merged_cell) in merged_cells.iter() {
-        // 전치: (row, col) -> (col, row)
-        // rowspan과 colspan도 교환
         transposed_merged_cells.insert((*col, *row), MergedCell {
             rowspan: merged_cell.colspan,
             colspan: merged_cell.rowspan,
@@ -170,9 +141,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
         });
     }
 
-    // 4. 전치된 그리드를 HTML 테이블로 변환
     let mut html_output = String::from("<table");
-    // table 태그의 attribute 추가
     for (attr_name, attr_value) in &table_attributes {
         html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
     }
@@ -183,9 +152,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
         
         let mut c = 0;
         while c < transposed_cols {
-            // 병합된 셀인지 확인
             if let Some(merged_cell) = transposed_merged_cells.get(&(r, c)) {
-                // 병합된 셀의 메인 셀
                 html_output.push_str("<td");
                 if merged_cell.rowspan > 1 {
                     html_output.push_str(&format!(" rowspan=\"{}\"", merged_cell.rowspan));
@@ -193,7 +160,6 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 if merged_cell.colspan > 1 {
                     html_output.push_str(&format!(" colspan=\"{}\"", merged_cell.colspan));
                 }
-                // 다른 attribute들 추가
                 for (attr_name, attr_value) in &merged_cell.attributes {
                     html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
                 }
@@ -201,13 +167,10 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 html_output.push_str(&escape_html(&merged_cell.content));
                 html_output.push_str("</td>");
                 
-                // 병합된 셀의 나머지 부분 건너뛰기
                 c += merged_cell.colspan;
             } else if let Some(Some(content)) = transposed_grid[r].get(c) {
-                // 점유된 위치가 아닌 경우만 출력 (병합된 셀의 일부가 아닌 실제 셀)
                 if !transposed_occupied_positions.contains(&(r, c)) {
                     html_output.push_str("<td");
-                    // 일반 셀의 attribute 추가
                     if let Some(attrs) = transposed_cell_attributes.get(&(r, c)) {
                         for (attr_name, attr_value) in attrs {
                             html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
@@ -219,7 +182,6 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 }
                 c += 1;
             } else {
-                // None인 경우도 빈 셀로 출력 (그리드가 제대로 구성되지 않은 경우)
                 html_output.push_str("<td></td>");
                 c += 1;
             }
