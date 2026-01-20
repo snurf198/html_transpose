@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 description = "html table transpose library"
-license = "None"
+license = "MIT"
 
 [dependencies]
 scraper = "0.25.0"
