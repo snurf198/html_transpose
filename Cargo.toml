@@ -3,5 +3,8 @@ name = "html_transpose"
 version = "0.1.0"
 edition = "2024"
 
+description = "html table transpose library"
+license = "None"
+
 [dependencies]
 scraper = "0.25.0"
