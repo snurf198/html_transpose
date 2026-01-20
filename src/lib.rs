@@ -145,7 +145,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
     for (attr_name, attr_value) in &table_attributes {
         html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
     }
-    html_output.push_str(">");
+    html_output.push('>');
     
     for r in 0..transposed_rows {
         html_output.push_str("<tr>");
@@ -163,7 +163,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 for (attr_name, attr_value) in &merged_cell.attributes {
                     html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
                 }
-                html_output.push_str(">");
+                html_output.push('>');
                 html_output.push_str(&escape_html(&merged_cell.content));
                 html_output.push_str("</td>");
                 
@@ -176,7 +176,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
                             html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
                         }
                     }
-                    html_output.push_str(">");
+                    html_output.push('>');
                     html_output.push_str(&escape_html(content));
                     html_output.push_str("</td>");
                 }

@@ -31,7 +31,7 @@ fn main() {
     } else {
         // 파일에서 읽기
         fs::read_to_string(&args[1])
-            .expect(&format!("파일 읽기 실패: {}", args[1]))
+            .unwrap_or_else(|_| panic!("파일 읽기 실패: {}", args[1]))
     };
 
     // HTML 테이블 전치 수행
@@ -47,7 +47,7 @@ fn main() {
     if args.len() >= 3 {
         // 출력 파일로 저장
         fs::write(&args[2], &transposed_html)
-            .expect(&format!("파일 쓰기 실패: {}", args[2]));
+            .unwrap_or_else(|_| panic!("파일 쓰기 실패: {}", args[2]));
         println!("전치된 HTML이 {} 파일에 저장되었습니다.", args[2]);
     } else if args[1] == "-" {
         // stdout으로 출력
@@ -57,7 +57,7 @@ fn main() {
         let output_file = format!("{}.transposed.html", 
             args[1].trim_end_matches(".html").trim_end_matches(".htm"));
         fs::write(&output_file, &transposed_html)
-            .expect(&format!("파일 쓰기 실패: {}", output_file));
+            .unwrap_or_else(|_| panic!("파일 쓰기 실패: {}", output_file));
         println!("전치된 HTML이 {} 파일에 저장되었습니다.", output_file);
     }
 }
