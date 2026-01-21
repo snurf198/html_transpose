@@ -9,6 +9,7 @@ struct MergedCell {
     colspan: usize,
     content: String,
     attributes: HashMap<String, String>, // rowspan, colspan을 제외한 다른 속성들
+    is_header: bool, // 헤더 셀(th)인지 여부
 }
 
 pub fn transpose(html: &str) -> Result<String, String> {
@@ -30,6 +31,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
     let mut merged_cells: HashMap<(usize, usize), MergedCell> = HashMap::new();
     let mut cell_attributes: HashMap<(usize, usize), HashMap<String, String>> = HashMap::new();
     let mut occupied_positions: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+    let mut header_cells: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new(); // 헤더 셀 위치 추적
     
     for (row_idx, row) in root.select(&tr_selector).enumerate() {
         if row_idx >= grid.len() {
@@ -46,6 +48,9 @@ pub fn transpose(html: &str) -> Result<String, String> {
             while col_idx < grid[row_idx].len() && grid[row_idx][col_idx].is_some() {
                 col_idx += 1;
             }
+            
+            // 셀 타입 확인 (th인지 td인지)
+            let is_header = cell.value().name() == "th";
             
             let rowspan = cell.value().attr("rowspan")
                 .and_then(|s| s.parse::<usize>().ok())
@@ -79,6 +84,11 @@ pub fn transpose(html: &str) -> Result<String, String> {
             
             grid[row_idx][col_idx] = Some(content.clone());
             
+            // 헤더 셀인 경우 위치 저장
+            if is_header {
+                header_cells.insert((row_idx, col_idx));
+            }
+            
             if !attributes.is_empty() {
                 cell_attributes.insert((row_idx, col_idx), attributes.clone());
             }
@@ -89,6 +99,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
                     colspan,
                     content: content.clone(),
                     attributes,
+                    is_header,
                 });
             }
             
@@ -115,6 +126,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
     let mut transposed_merged_cells: HashMap<(usize, usize), MergedCell> = HashMap::new();
     let mut transposed_cell_attributes: HashMap<(usize, usize), HashMap<String, String>> = HashMap::new();
     let mut transposed_occupied_positions: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+    let mut transposed_header_cells: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new(); // 전치된 헤더 셀 위치
 
     for r in 0..max_row {
         for c in 0..max_col {
@@ -124,6 +136,11 @@ pub fn transpose(html: &str) -> Result<String, String> {
 
     for (row, col) in occupied_positions.iter() {
         transposed_occupied_positions.insert((*col, *row));
+    }
+
+    // 헤더 셀 위치 전치: (row, col) -> (col, row)
+    for (row, col) in header_cells.iter() {
+        transposed_header_cells.insert((*col, *row));
     }
 
     for ((row, col), attrs) in cell_attributes.iter() {
@@ -138,6 +155,7 @@ pub fn transpose(html: &str) -> Result<String, String> {
             colspan: merged_cell.rowspan,
             content: merged_cell.content.clone(),
             attributes: merged_cell.attributes.clone(),
+            is_header: merged_cell.is_header,
         });
     }
 
@@ -153,7 +171,9 @@ pub fn transpose(html: &str) -> Result<String, String> {
         let mut c = 0;
         while c < transposed_cols {
             if let Some(merged_cell) = transposed_merged_cells.get(&(r, c)) {
-                html_output.push_str("<td");
+                // 병합된 셀: is_header에 따라 <th> 또는 <td> 사용
+                let tag = if merged_cell.is_header { "th" } else { "td" };
+                html_output.push_str(&format!("<{}", tag));
                 if merged_cell.rowspan > 1 {
                     html_output.push_str(&format!(" rowspan=\"{}\"", merged_cell.rowspan));
                 }
@@ -165,12 +185,15 @@ pub fn transpose(html: &str) -> Result<String, String> {
                 }
                 html_output.push('>');
                 html_output.push_str(&escape_html(&merged_cell.content));
-                html_output.push_str("</td>");
+                html_output.push_str(&format!("</{}>", tag));
                 
                 c += merged_cell.colspan;
             } else if let Some(Some(content)) = transposed_grid[r].get(c) {
                 if !transposed_occupied_positions.contains(&(r, c)) {
-                    html_output.push_str("<td");
+                    // 일반 셀: transposed_header_cells에 위치가 있으면 <th>, 없으면 <td>
+                    let is_header = transposed_header_cells.contains(&(r, c));
+                    let tag = if is_header { "th" } else { "td" };
+                    html_output.push_str(&format!("<{}", tag));
                     if let Some(attrs) = transposed_cell_attributes.get(&(r, c)) {
                         for (attr_name, attr_value) in attrs {
                             html_output.push_str(&format!(" {}=\"{}\"", attr_name, escape_attr_value(attr_value)));
@@ -178,10 +201,11 @@ pub fn transpose(html: &str) -> Result<String, String> {
                     }
                     html_output.push('>');
                     html_output.push_str(&escape_html(content));
-                    html_output.push_str("</td>");
+                    html_output.push_str(&format!("</{}>", tag));
                 }
                 c += 1;
             } else {
+                // 빈 셀은 기본적으로 <td> 사용
                 html_output.push_str("<td></td>");
                 c += 1;
             }
@@ -399,5 +423,75 @@ mod tests {
         assert!(result.contains("my-table"));
         assert!(result.contains("test-table"));
         assert!(result.contains("A") && result.contains("B") && result.contains("C") && result.contains("D"));
+    }
+
+    // 헤더 셀이 전치 후에도 유지되는지 테스트
+    #[test]
+    fn test_header_cells_preserved() {
+        let input = r#"<table>
+            <tr><th>이름</th><th>나이</th><th>직업</th></tr>
+            <tr><td>홍길동</td><td>30</td><td>개발자</td></tr>
+            <tr><td>김철수</td><td>25</td><td>디자이너</td></tr>
+        </table>"#;
+        let result = transpose(input).unwrap();
+        // 전치 후 첫 번째 열이 헤더 셀이 되어야 함
+        // 원래: 이름/나이/직업 (행), 홍길동/김철수 (행), 30/25 (행), 개발자/디자이너 (행)
+        // 전치 후: 이름/홍길동/김철수 (열), 나이/30/25 (열), 직업/개발자/디자이너 (열)
+        // 첫 번째 행의 모든 셀이 <th>여야 함
+        assert!(result.contains("<th>이름</th>"));
+        assert!(result.contains("<th>나이</th>"));
+        assert!(result.contains("<th>직업</th>"));
+        // 데이터 셀은 <td>여야 함
+        assert!(result.contains("<td>홍길동</td>"));
+        assert!(result.contains("<td>김철수</td>"));
+        assert!(result.contains("<td>30</td>"));
+        assert!(result.contains("<td>25</td>"));
+        assert!(result.contains("<td>개발자</td>"));
+        assert!(result.contains("<td>디자이너</td>"));
+    }
+
+    // 병합된 헤더 셀이 유지되는지 테스트
+    #[test]
+    fn test_header_cells_with_merged_cells() {
+        let input = r#"<table>
+            <tr><th rowspan="2">부서</th><th colspan="2">개인정보</th></tr>
+            <tr><th>이름</th><th>나이</th></tr>
+            <tr><td>개발팀</td><td>홍길동</td><td>30</td></tr>
+        </table>"#;
+        let result = transpose(input).unwrap();
+        // 병합된 헤더 셀 "부서"가 <th>로 유지되어야 함
+        assert!(result.contains("<th") && result.contains("부서") && result.contains("</th>"));
+        // "개인정보"도 헤더 셀로 유지되어야 함 (전치 후 rowspan으로 변환됨)
+        assert!(result.contains("<th") && result.contains("개인정보") && result.contains("</th>"));
+        // "이름", "나이"도 헤더 셀로 유지되어야 함
+        assert!(result.contains("<th>이름</th>"));
+        assert!(result.contains("<th>나이</th>"));
+        // 데이터 셀은 <td>여야 함
+        assert!(result.contains("<td>개발팀</td>"));
+        assert!(result.contains("<td>홍길동</td>"));
+        assert!(result.contains("<td>30</td>"));
+    }
+
+    // 헤더 셀과 데이터 셀이 혼합된 경우 테스트
+    #[test]
+    fn test_mixed_header_and_data_cells() {
+        let input = r#"<table>
+            <tr><th>항목</th><td>값1</td><td>값2</td></tr>
+            <tr><th>이름</th><td>홍길동</td><td>김철수</td></tr>
+            <tr><th>나이</th><td>30</td><td>25</td></tr>
+        </table>"#;
+        let result = transpose(input).unwrap();
+        // 전치 후 첫 번째 행: 항목/이름/나이 (모두 헤더 셀)
+        assert!(result.contains("<th>항목</th>"));
+        assert!(result.contains("<th>이름</th>"));
+        assert!(result.contains("<th>나이</th>"));
+        // 전치 후 두 번째 행: 값1/홍길동/30 (모두 데이터 셀)
+        assert!(result.contains("<td>값1</td>"));
+        assert!(result.contains("<td>홍길동</td>"));
+        assert!(result.contains("<td>30</td>"));
+        // 전치 후 세 번째 행: 값2/김철수/25 (모두 데이터 셀)
+        assert!(result.contains("<td>값2</td>"));
+        assert!(result.contains("<td>김철수</td>"));
+        assert!(result.contains("<td>25</td>"));
     }
 }
